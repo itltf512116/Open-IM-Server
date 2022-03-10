@@ -76,7 +76,12 @@ func (s *groupServer) CreateGroup(ctx context.Context, req *pbGroup.CreateGroupR
 		log.NewError(req.OperationID, "CheckAccess false ", req.OpUserID, req.OwnerUserID)
 		return &pbGroup.CreateGroupResp{ErrCode: constant.ErrAccess.ErrCode, ErrMsg: constant.ErrAccess.ErrMsg}, nil
 	}
-
+	canCreate, err := callbackBeforeCreateGroup(req)
+	if err != nil || !canCreate {
+		if err != nil {
+			log.NewError(req.OperationID, utils.GetSelfFuncName(), "callbackBeforeCreateGroup failed", )
+		}
+	}
 	//Time stamp + MD5 to generate group chat id
 	groupId := utils.Md5(strconv.FormatInt(time.Now().UnixNano(), 10))
 	//to group
@@ -84,7 +89,7 @@ func (s *groupServer) CreateGroup(ctx context.Context, req *pbGroup.CreateGroupR
 	utils.CopyStructFields(&groupInfo, req.GroupInfo)
 	groupInfo.CreatorUserID = req.OpUserID
 	groupInfo.GroupID = groupId
-	err := imdb.InsertIntoGroup(groupInfo)
+	err = imdb.InsertIntoGroup(groupInfo)
 	if err != nil {
 		log.NewError(req.OperationID, "InsertIntoGroup failed, ", err.Error(), groupInfo)
 		return &pbGroup.CreateGroupResp{ErrCode: constant.ErrDB.ErrCode, ErrMsg: constant.ErrDB.ErrMsg}, http.WrapError(constant.ErrDB)
@@ -746,6 +751,7 @@ func (s *groupServer) GetGroups(_ context.Context, req *pbGroup.GetGroupsReq) (*
 				OwnerUserID:   v.CreatorUserID,
 				Status:        v.Status,
 				CreatorUserID: v.CreatorUserID,
+				CreateTime:    uint32(v.CreateTime.Unix()),
 			},
 			GroupMasterId: groupMember.UserID,
 			GroupMasterName: groupMember.Nickname,
@@ -890,10 +896,9 @@ func (s *groupServer) AddGroupMembersCMS(_ context.Context, req *pbGroup.AddGrou
 			resp.Failed = append(resp.Failed, userId)
 		} else  {
 			resp.Success = append(resp.Success, userId)
-			chat.MemberInvitedNotification(req.OperationId, req.GroupId, req.OpUserId, "admin add", resp.Success)
 		}
-
 	}
+	chat.MemberInvitedNotification(req.OperationId, req.GroupId, req.OpUserId, "admin add you to group", resp.Success)
 	return resp, nil
 }
 
